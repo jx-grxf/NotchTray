@@ -41,6 +41,10 @@ final class OverflowPanel: NSPanel {
         hosting.rootView = OverflowView(store: store) { [weak self] in
             self?.hide()
         }
+        // The window frame is managed exclusively by show(); without this,
+        // NSHostingView's default sizing shrinks the window to the collapsed
+        // island and strands an invisible click-eating rect at the corner.
+        hosting.sizingOptions = []
         contentView = hosting
     }
 

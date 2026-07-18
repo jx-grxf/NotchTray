@@ -60,6 +60,11 @@ final class ItemImageCapturer {
             matched.append((entry.item, entry.window))
         }
 
+        let unmatchedItems = items.filter { item in !matched.contains { $0.0.id == item.id } }
+        if !unmatchedItems.isEmpty {
+            DebugLog.log("capture: no window match for \(unmatchedItems.map { "\($0.appName)@\($0.frame.minX)w\($0.frame.width)" }.joined(separator: ", "))")
+        }
+
         var result: [String: CGImage] = [:]
         for (item, window) in matched {
             let config = SCStreamConfiguration()
@@ -69,10 +74,13 @@ final class ItemImageCapturer {
             config.captureResolution = .best
 
             let filter = SCContentFilter(desktopIndependentWindow: window)
-            if let image = try? await SCScreenshotManager.captureImage(
-                contentFilter: filter, configuration: config
-            ) {
+            do {
+                let image = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter, configuration: config
+                )
                 result[item.id] = Self.croppedToContent(image)
+            } catch {
+                DebugLog.log("capture: FAILED for \(item.appName) win@\(window.frame.minX): \(error.localizedDescription)")
             }
         }
         return result

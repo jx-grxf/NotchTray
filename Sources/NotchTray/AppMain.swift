@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var panel: OverflowPanel?
     private var hoverZone: NotchHoverZone?
+    private var mouseMoveMonitor: Any?
+    private var localMouseMoveMonitor: Any?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
 
@@ -128,6 +130,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onEnter: { [weak self] in self?.notchHovered() },
             onExit: {}
         )
+
+        // Redundant trigger: tracking areas miss entries in edge cases
+        // (e.g. while a mouse button is held). A global move monitor
+        // catches those; the show() guard makes duplicates harmless.
+        if let mouseMoveMonitor {
+            NSEvent.removeMonitor(mouseMoveMonitor)
+        }
+        let notchRange = metrics.notchXRange
+        let minY = metrics.screen.frame.maxY - metrics.menuBarHeight
+        let handler: () -> Void = { [weak self] in
+            let location = NSEvent.mouseLocation
+            guard location.y >= minY,
+                  notchRange.contains(location.x) else { return }
+            Task { @MainActor in self?.notchHovered() }
+        }
+        mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in
+            handler()
+        }
+        // Moves over our own hover-zone window are delivered to this app and
+        // invisible to the global monitor — mirror with a local one.
+        if let localMouseMoveMonitor {
+            NSEvent.removeMonitor(localMouseMoveMonitor)
+        }
+        localMouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+            handler()
+            return event
+        }
     }
 
     private func notchHovered() {
