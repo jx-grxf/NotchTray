@@ -148,16 +148,10 @@ final class OverflowPanel: NSPanel {
         }
     }
 
-    /// Notch + expanded island, with a small forgiveness margin
-    /// (bottom-left-origin global coordinates, same as NSEvent.mouseLocation).
+    /// The whole panel window counts as "inside": measuring the island's
+    /// rendered size proved fragile and closed the panel while the cursor
+    /// was en route from the notch down to the icons.
     private func keepOpenRegion() -> CGRect {
-        let island = hosting.fittingSize
-        let f = frame
-        return CGRect(
-            x: f.midX - island.width / 2 - 16,
-            y: f.maxY - island.height - 28,
-            width: island.width + 32,
-            height: island.height + 28
-        )
+        frame
     }
 }
