@@ -5,6 +5,7 @@ import Foundation
 enum Prefs {
     static let openOnHoverKey = "openOnHover"
     static let autoCloseDelayKey = "autoCloseDelay"
+    static let showInDockKey = "showInDock"
 
     /// Expand the island when the cursor touches the notch (default on).
     static var openOnHover: Bool {
@@ -15,5 +16,10 @@ enum Prefs {
     static var autoCloseDelay: Double {
         let value = UserDefaults.standard.double(forKey: autoCloseDelayKey)
         return value == 0 ? 0.6 : value
+    }
+
+    /// Show the app in the Dock (default off — menu-bar-only).
+    static var showInDock: Bool {
+        UserDefaults.standard.bool(forKey: showInDockKey)
     }
 }

@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyHandler: EventHandlerRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppActivationPolicy.applyBasePolicy()
         panel = OverflowPanel(store: store)
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

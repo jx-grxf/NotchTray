@@ -7,6 +7,7 @@ import SwiftUI
 struct GeneralSettingsPane: View {
     @AppStorage(Prefs.openOnHoverKey) private var openOnHover = true
     @AppStorage(Prefs.autoCloseDelayKey) private var autoCloseDelay = 0.6
+    @AppStorage(Prefs.showInDockKey) private var showInDock = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -30,6 +31,24 @@ struct GeneralSettingsPane: View {
                         }
                     } catch {
                         launchAtLogin = SMAppService.mainApp.status == .enabled
+                    }
+                }
+
+                Toggle(isOn: $showInDock) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show in Dock")
+                        Text("Off: NotchTray lives only in the menu bar.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .onChange(of: showInDock) { _, _ in
+                    // The settings window holds .regular while open; the new
+                    // base policy takes effect once it closes (or instantly
+                    // when turning the Dock icon on).
+                    if Prefs.showInDock {
+                        NSApp.setActivationPolicy(.regular)
                     }
                 }
             }
