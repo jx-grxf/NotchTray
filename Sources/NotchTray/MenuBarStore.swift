@@ -16,6 +16,13 @@ final class MenuBarStore {
     private(set) var captures: [String: CGImage] = [:]
     /// Drives the island's expand/collapse spring animation.
     var panelExpanded = false
+    /// Edit mode: the island shows all items with hide/restore actions.
+    var editMode = false
+    /// A ⌘-drag move is in progress; the strip disables itself meanwhile.
+    private(set) var isMoving = false
+
+    /// Owns the separator item and the move flows.
+    var notchManager: NotchManager?
 
     /// Called after every refresh so AppKit-side UI (status item badge)
     /// can update without observation plumbing.
@@ -53,7 +60,18 @@ final class MenuBarStore {
     }
 
     func captureIcons() async {
-        captures = await capturer.capture(items: hiddenItems)
+        captures = await capturer.capture(items: editMode ? items : hiddenItems)
+    }
+
+    /// Awaitable scan used by move flows that need fresh positions.
+    func rescanNow() async {
+        axTrusted = AXIsProcessTrusted()
+        metrics = NotchMetrics.detect()
+        let bounds = ScanBounds(metrics: metrics)
+        items = await Task.detached(priority: .userInitiated) {
+            MenuBarScanner.scan(bounds: bounds)
+        }.value
+        onRefresh?()
     }
 
     func startPolling() {
@@ -75,14 +93,34 @@ final class MenuBarStore {
     }
 
     func activate(_ item: MenuBarItem) {
-        MenuBarScanner.activate(item)
-        // Items parked far off-screen (menu bar managers do this) open their
-        // menus at their real position, where macOS clips them. Bring the
-        // owning app forward as a visible fallback.
-        let screenMaxX = metrics?.screen.frame.maxX ?? 10_000
-        if item.frame.maxX < 0 || item.frame.minX > screenMaxX,
-           let app = NSRunningApplication(processIdentifier: item.pid) {
-            app.activate()
+        guard let notchManager, !isMoving else {
+            MenuBarScanner.activate(item)
+            return
+        }
+        isMoving = true
+        Task {
+            await notchManager.activate(item, store: self)
+            isMoving = false
+        }
+    }
+
+    func hideIntoNotch(_ item: MenuBarItem) {
+        guard let notchManager, !isMoving else { return }
+        isMoving = true
+        Task {
+            await notchManager.hide(item, store: self)
+            await captureIcons()
+            isMoving = false
+        }
+    }
+
+    func restoreFromNotch(_ item: MenuBarItem) {
+        guard let notchManager, !isMoving else { return }
+        isMoving = true
+        Task {
+            await notchManager.restore(item, store: self)
+            await captureIcons()
+            isMoving = false
         }
     }
 

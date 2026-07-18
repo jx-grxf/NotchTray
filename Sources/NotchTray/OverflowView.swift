@@ -34,6 +34,8 @@ struct OverflowView: View {
     private var content: some View {
         if !store.axTrusted {
             accessibilityPrompt
+        } else if store.editMode {
+            editStrip
         } else if store.hiddenItems.isEmpty {
             HStack(spacing: 4) {
                 Text("All status items are visible")
@@ -75,12 +77,69 @@ struct OverflowView: View {
 
     private var controlButtons: some View {
         HStack(spacing: 2) {
+            MiniControl(
+                symbol: store.editMode ? "checkmark" : "pencil",
+                help: store.editMode ? "Done" : "Choose items to hide in the notch",
+                active: store.editMode
+            ) {
+                store.editMode.toggle()
+                if store.editMode {
+                    Task { await store.captureIcons() }
+                }
+            }
             MiniControl(symbol: "gearshape.fill", help: "Settings") {
                 onClose()
                 SettingsWindowController.show()
             }
             MiniControl(symbol: "power", help: "Quit NotchTray") {
                 NSApp.terminate(nil)
+            }
+        }
+    }
+
+    /// Edit mode: every item becomes a hide/restore toggle.
+    private var editStrip: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !store.hiddenItems.isEmpty {
+                caption("In the notch — click to restore")
+                itemRow(store.hiddenItems) { store.restoreFromNotch($0) }
+            }
+            caption("Menu bar — click to hide in the notch")
+            ScrollView(.horizontal, showsIndicators: false) {
+                itemRow(store.visibleItems) { store.hideIntoNotch($0) }
+            }
+            .frame(maxWidth: 460)
+
+            HStack(spacing: 4) {
+                Spacer()
+                if store.isMoving {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 4)
+                }
+                divider
+                controlButtons
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 2)
+        .padding(.bottom, 12)
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.gray)
+            .padding(.leading, 4)
+    }
+
+    private func itemRow(_ items: [MenuBarItem], action: @escaping (MenuBarItem) -> Void) -> some View {
+        HStack(spacing: 4) {
+            ForEach(items) { item in
+                IconCell(item: item, capture: store.captures[item.id]) {
+                    action(item)
+                }
+                .disabled(store.isMoving)
             }
         }
     }
@@ -108,6 +167,7 @@ struct OverflowView: View {
 private struct MiniControl: View {
     let symbol: String
     let help: String
+    var active: Bool = false
     var action: () -> Void
     @State private var hovering = false
 
@@ -115,9 +175,15 @@ private struct MiniControl: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(hovering ? .white : .gray)
+                .foregroundStyle(active || hovering ? .white : .gray)
                 .frame(width: 22, height: 22)
-                .background(Circle().fill(hovering ? Color.white.opacity(0.15) : .clear))
+                .background(
+                    Circle().fill(
+                        active ? Color.white.opacity(0.25)
+                            : hovering ? Color.white.opacity(0.15)
+                            : .clear
+                    )
+                )
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

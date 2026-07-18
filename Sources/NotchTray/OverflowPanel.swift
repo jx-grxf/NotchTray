@@ -93,6 +93,7 @@ final class OverflowPanel: NSPanel {
             self.globalClickMonitor = nil
         }
         store.panelExpanded = false
+        store.editMode = false
         // Remove the window only after the collapse spring has finished.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self, !self.store.panelExpanded else { return }
@@ -123,6 +124,12 @@ final class OverflowPanel: NSPanel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(120))
                 guard let self, self.isShown else { return }
+                // Synthetic ⌘-drags move the cursor across the menu bar;
+                // don't let that count as the user leaving.
+                if self.store.isMoving {
+                    outsideSince = nil
+                    continue
+                }
                 if self.keepOpenRegion().contains(NSEvent.mouseLocation) {
                     outsideSince = nil
                 } else if let since = outsideSince {

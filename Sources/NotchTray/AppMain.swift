@@ -23,18 +23,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppActivationPolicy.applyBasePolicy()
         panel = OverflowPanel(store: store)
 
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = NSImage(
-                systemSymbolName: "menubar.arrow.down.rectangle",
-                accessibilityDescription: "NotchTray"
-            )
-            button.imagePosition = .imageLeft
-            button.target = self
-            button.action = #selector(statusItemClicked)
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // Separator first: on macOS 26 new status items insert to the right,
+        // so the main icon created afterwards lands on the visible side.
+        let manager = NotchManager()
+        manager.install()
+        manager.setInteractionPassthrough = { [weak self] passthrough in
+            self?.panel?.ignoresMouseEvents = passthrough
+            self?.hoverZone?.ignoresMouseEvents = passthrough
         }
-        statusItem = item
+        store.notchManager = manager
+
+        createStatusItem()
 
         store.onRefresh = { [weak self] in self?.updateBadge() }
         store.refresh()
@@ -52,6 +51,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !AXIsProcessTrusted() {
             MenuBarScanner.requestAccessibility()
         }
+
+        // If our own icon ended up left of the separator (hidden), pull it
+        // back to the visible side.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            await self?.rescueOwnIconIfHidden()
+        }
+    }
+
+    private func createStatusItem() {
+        let generation = UserDefaults.standard.integer(forKey: "statusItemGeneration")
+        let autosaveName = "NotchTrayMain-\(generation)"
+        // New status items insert leftmost — behind the expanded separator.
+        // Seeding the preferred-position default (distance from the right
+        // screen edge) before creation places the item on the visible side.
+        let positionKey = "NSStatusItem Preferred Position \(autosaveName)"
+        if UserDefaults.standard.object(forKey: positionKey) == nil {
+            UserDefaults.standard.set(300, forKey: positionKey)
+        }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = autosaveName
+        if let button = item.button {
+            button.image = NSImage(
+                systemSymbolName: "menubar.arrow.down.rectangle",
+                accessibilityDescription: "NotchTray"
+            )
+            button.imagePosition = .imageLeft
+            button.target = self
+            button.action = #selector(statusItemClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        statusItem = item
+    }
+
+    /// If our own icon ended up left of the separator (hidden) or under the
+    /// notch, recreate it under a fresh autosave identity — macOS assigns
+    /// fresh items a new, visible position. No synthetic drags needed.
+    private func rescueOwnIconIfHidden() async {
+        guard let window = statusItem?.button?.window else { return }
+        let frame = window.frame
+        let notch = NotchMetrics.detect()
+        let hidden = frame.minX < 0
+            || (notch.map { frame.midX > $0.notchXRange.lowerBound
+                    && frame.midX < $0.notchXRange.upperBound } ?? false)
+        guard hidden else { return }
+        DebugLog.log("rescue: recreating status item, old frame=\(frame)")
+        if let old = statusItem {
+            NSStatusBar.system.removeStatusItem(old)
+        }
+        let generation = UserDefaults.standard.integer(forKey: "statusItemGeneration") + 1
+        UserDefaults.standard.set(generation, forKey: "statusItemGeneration")
+        createStatusItem()
+        updateBadge()
+        DebugLog.log("rescue: new frame=\(String(describing: statusItem?.button?.window?.frame))")
     }
 
     func applicationWillTerminate(_ notification: Notification) {

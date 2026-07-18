@@ -44,11 +44,17 @@ struct GeneralSettingsPane: View {
                 }
                 .toggleStyle(.switch)
                 .onChange(of: showInDock) { _, _ in
-                    // The settings window holds .regular while open; the new
-                    // base policy takes effect once it closes (or instantly
-                    // when turning the Dock icon on).
                     if Prefs.showInDock {
                         NSApp.setActivationPolicy(.regular)
+                    } else {
+                        // Apply instantly; re-front the settings window since
+                        // the policy flip deactivates the app.
+                        NSApp.setActivationPolicy(.accessory)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            NSApp.activate(ignoringOtherApps: true)
+                            NSApp.windows.first { $0.title == "Settings" }?
+                                .makeKeyAndOrderFront(nil)
+                        }
                     }
                 }
             }
