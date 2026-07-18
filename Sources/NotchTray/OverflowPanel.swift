@@ -5,17 +5,23 @@ import SwiftUI
 /// sized generously and shown instantly; the SwiftUI content animates between
 /// a collapsed notch-sized state (invisible black-on-black) and the expanded
 /// island, per the Dynamic Island choreography.
+///
+/// Auto-close does not rely on hover tracking (fragile across overlapping
+/// windows): while shown, a watcher polls the global mouse location and
+/// closes the island once the cursor has left the notch+island region.
 @MainActor
 final class OverflowPanel: NSPanel {
 
     private let store: MenuBarStore
-    /// Reports hover state changes so the owner can manage auto-close.
-    var onHoverChange: ((Bool) -> Void)?
+    private let hosting: NSHostingView<OverflowView>
 
     private var globalClickMonitor: Any?
+    private var containmentTask: Task<Void, Never>?
 
     init(store: MenuBarStore) {
         self.store = store
+        let root = OverflowView(store: store)
+        self.hosting = NSHostingView(rootView: root)
         super.init(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -32,12 +38,10 @@ final class OverflowPanel: NSPanel {
         level = .popUpMenu
         collectionBehavior = [.stationary, .canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        let root = OverflowView(
-            store: store,
-            onHover: { [weak self] inside in self?.onHoverChange?(inside) },
-            onClose: { [weak self] in self?.hide() }
-        )
-        contentView = NSHostingView(rootView: root)
+        hosting.rootView = OverflowView(store: store) { [weak self] in
+            self?.hide()
+        }
+        contentView = hosting
     }
 
     override var canBecomeKey: Bool { true }
@@ -46,7 +50,9 @@ final class OverflowPanel: NSPanel {
 
     func show() {
         guard !isShown else { return }
-        store.refresh()
+        // Opens instantly from cached scan results; a fresh background scan
+        // and icon capture update the strip moments later.
+        store.refresh(thenCapture: true)
         guard let metrics = store.metrics else { return }
 
         store.capturer.requestPermissionIfNeeded()
@@ -64,12 +70,12 @@ final class OverflowPanel: NSPanel {
 
         orderFrontRegardless()
 
-        Task { await store.captureIcons() }
-
         // Let the window land on screen before the expand spring starts.
         DispatchQueue.main.async { [store] in
             store.panelExpanded = true
         }
+
+        startContainmentWatch()
 
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
@@ -80,6 +86,8 @@ final class OverflowPanel: NSPanel {
 
     func hide() {
         guard isShown else { return }
+        containmentTask?.cancel()
+        containmentTask = nil
         if let globalClickMonitor {
             NSEvent.removeMonitor(globalClickMonitor)
             self.globalClickMonitor = nil
@@ -103,5 +111,42 @@ final class OverflowPanel: NSPanel {
     override func mouseDown(with event: NSEvent) {
         // Clicks landing on the transparent margin around the island.
         hide()
+    }
+
+    // MARK: - Mouse containment
+
+    private func startContainmentWatch() {
+        containmentTask?.cancel()
+        containmentTask = Task { [weak self] in
+            let clock = ContinuousClock()
+            var outsideSince: ContinuousClock.Instant?
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard let self, self.isShown else { return }
+                if self.keepOpenRegion().contains(NSEvent.mouseLocation) {
+                    outsideSince = nil
+                } else if let since = outsideSince {
+                    if clock.now - since > .milliseconds(Int(Prefs.autoCloseDelay * 1000)) {
+                        self.hide()
+                        return
+                    }
+                } else {
+                    outsideSince = clock.now
+                }
+            }
+        }
+    }
+
+    /// Notch + expanded island, with a small forgiveness margin
+    /// (bottom-left-origin global coordinates, same as NSEvent.mouseLocation).
+    private func keepOpenRegion() -> CGRect {
+        let island = hosting.fittingSize
+        let f = frame
+        return CGRect(
+            x: f.midX - island.width / 2 - 16,
+            y: f.maxY - island.height - 28,
+            width: island.width + 32,
+            height: island.height + 28
+        )
     }
 }

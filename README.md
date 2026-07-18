@@ -23,9 +23,13 @@ from under the notch. Clicking an entry activates the real status item.
 
 ## Usage
 
-- Left-click the NotchTray status icon or press **⌃⌥N** to toggle the panel.
+- Hover the notch with the cursor to expand the island; move away to close it.
+- Left-click the NotchTray status icon or press **⌃⌥N** to toggle it manually.
+- The island shows hidden items as their real menu bar icons (with Screen
+  Recording permission) and includes a settings gear and a quit switch.
 - The status icon shows a count badge while items are hidden.
-- Right-click the icon for Refresh / Quit.
+- Settings: launch at login, hover behavior, auto-close delay, permission
+  status (right-click the status icon → Settings…).
 - Requires Accessibility access (System Settings → Privacy & Security →
   Accessibility). The app prompts on first launch.
 

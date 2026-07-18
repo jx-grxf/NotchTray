@@ -1,6 +1,20 @@
 import AppKit
 import ApplicationServices
 
+/// Sendable subset of NotchMetrics used for off-main-thread scanning.
+struct ScanBounds: Sendable {
+    let notchMinX: CGFloat
+    let notchMaxX: CGFloat
+    let maxVisibleX: CGFloat
+
+    init?(metrics: NotchMetrics?) {
+        guard let metrics else { return nil }
+        notchMinX = metrics.notchXRange.lowerBound
+        notchMaxX = metrics.notchXRange.upperBound
+        maxVisibleX = metrics.maxVisibleX
+    }
+}
+
 /// Discovers status items by walking every running app's `AXExtrasMenuBar`.
 ///
 /// On macOS 26 all status items are *rendered* by the Control Center process,
@@ -8,10 +22,13 @@ import ApplicationServices
 /// owning apps. The AX tree, however, is still per-app: each app exposes its
 /// items (with global position and size) under the AXExtrasMenuBar attribute,
 /// and Control Center exposes the system items (clock, Wi-Fi, battery, ...).
-@MainActor
+///
+/// `scan` is safe to call off the main thread (AX APIs are thread-safe);
+/// it can block on unresponsive processes, so callers should not run it on
+/// the main thread.
 enum MenuBarScanner {
 
-    static func scan(metrics: NotchMetrics?) -> [MenuBarItem] {
+    static func scan(bounds: ScanBounds?) -> [MenuBarItem] {
         guard AXIsProcessTrusted() else { return [] }
 
         let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -54,7 +71,7 @@ enum MenuBarScanner {
                     icon: app.icon,
                     detail: detail == appName ? "" : detail,
                     frame: frame,
-                    visibility: classify(frame: frame, metrics: metrics),
+                    visibility: classify(frame: frame, bounds: bounds),
                     element: child
                 ))
             }
@@ -77,15 +94,14 @@ enum MenuBarScanner {
 
     // MARK: - Classification
 
-    private static func classify(frame: CGRect, metrics: NotchMetrics?) -> MenuBarItem.Visibility {
-        guard let metrics else { return .visible }
+    private static func classify(frame: CGRect, bounds: ScanBounds?) -> MenuBarItem.Visibility {
+        guard let bounds else { return .visible }
         let tolerance: CGFloat = 1
-        if frame.minX >= metrics.minVisibleX - tolerance,
-           frame.maxX <= metrics.maxVisibleX + tolerance {
+        if frame.minX >= bounds.notchMaxX - tolerance,
+           frame.maxX <= bounds.maxVisibleX + tolerance {
             return .visible
         }
-        if frame.maxX > metrics.notchXRange.lowerBound,
-           frame.minX < metrics.notchXRange.upperBound {
+        if frame.maxX > bounds.notchMinX, frame.minX < bounds.notchMaxX {
             return .behindNotch
         }
         return .offscreen

@@ -16,14 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var panel: OverflowPanel?
     private var hoverZone: NotchHoverZone?
-    private var closeTask: Task<Void, Never>?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let panel = OverflowPanel(store: store)
-        panel.onHoverChange = { [weak self] inside in self?.hoverChanged(inside) }
-        self.panel = panel
+        panel = OverflowPanel(store: store)
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
@@ -63,7 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func togglePanel() {
-        closeTask?.cancel()
         panel?.toggle()
     }
 
@@ -76,25 +72,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hoverZone = NotchHoverZone(
             metrics: metrics,
             onEnter: { [weak self] in self?.notchHovered() },
-            onExit: { [weak self] in self?.hoverChanged(false) }
+            onExit: {}
         )
     }
 
     private func notchHovered() {
-        closeTask?.cancel()
-        // Only expand when there is something to show (or to ask for).
-        guard !store.axTrusted || !store.hiddenItems.isEmpty else { return }
+        guard Prefs.openOnHover else { return }
+        // Always respond to the hover; with nothing hidden the island shows
+        // a brief "all visible" state instead of silently ignoring the user.
         panel?.show()
-    }
-
-    private func hoverChanged(_ inside: Bool) {
-        closeTask?.cancel()
-        guard !inside else { return }
-        closeTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            self?.panel?.hide()
-        }
     }
 
     @objc private func screensChanged() {
@@ -121,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showContextMenu() {
         let menu = NSMenu()
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: "Refresh", action: #selector(refreshNow), keyEquivalent: "r")
         if !AXIsProcessTrusted() {
             menu.addItem(withTitle: "Grant Accessibility Access…",
@@ -136,6 +123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshNow() {
         store.refresh()
+    }
+
+    @objc private func openSettings() {
+        SettingsWindowController.show()
     }
 
     @objc private func grantAccess() {

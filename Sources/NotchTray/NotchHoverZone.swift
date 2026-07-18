@@ -7,10 +7,12 @@ import AppKit
 final class NotchHoverZone: NSPanel {
 
     init(metrics: NotchMetrics, onEnter: @escaping () -> Void, onExit: @escaping () -> Void) {
+        // Wider than the notch itself so the target is easy to hit.
+        let horizontalSlop: CGFloat = 24
         let rect = CGRect(
-            x: metrics.notchXRange.lowerBound,
+            x: metrics.notchXRange.lowerBound - horizontalSlop,
             y: metrics.screen.frame.maxY - metrics.menuBarHeight,
-            width: metrics.notchWidth,
+            width: metrics.notchWidth + horizontalSlop * 2,
             height: metrics.menuBarHeight
         )
         super.init(

@@ -2,7 +2,11 @@ import AppKit
 import ApplicationServices
 
 /// A single status item in the menu bar, discovered via the Accessibility API.
-struct MenuBarItem: Identifiable {
+///
+/// @unchecked Sendable: immutable struct; AXUIElement is a thread-safe CF
+/// type and NSImage is not mutated after creation. Items are produced on a
+/// background scan thread and consumed on the main actor.
+struct MenuBarItem: Identifiable, @unchecked Sendable {
     enum Visibility {
         /// Fully inside the visible right-hand menu bar region.
         case visible

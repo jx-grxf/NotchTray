@@ -52,9 +52,46 @@ final class ItemImageCapturer {
             if let image = try? await SCScreenshotManager.captureImage(
                 contentFilter: filter, configuration: config
             ) {
-                result[item.id] = image
+                result[item.id] = Self.croppedToContent(image)
             }
         }
         return result
+    }
+
+    /// Status item windows are ~39 pt tall with the glyph centered in lots of
+    /// transparent padding; displayed as-is the glyph looks tiny. Crop to the
+    /// visible (non-transparent) pixels with a small margin.
+    private static func croppedToContent(_ image: CGImage) -> CGImage {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0,
+              let context = CGContext(
+                data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else { return image }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = context.data else { return image }
+
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * width + x) * 4 + 3] > 16 {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return image }
+
+        let margin = 2
+        let box = CGRect(
+            x: max(0, minX - margin),
+            y: max(0, minY - margin),
+            width: min(width, maxX + margin + 1) - max(0, minX - margin),
+            height: min(height, maxY + margin + 1) - max(0, minY - margin)
+        )
+        return image.cropping(to: box) ?? image
     }
 }
