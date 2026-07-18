@@ -1,16 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// Borderless, non-activating panel that drops down from the hardware notch
-/// and lists hidden status items. Interactive (unlike a pure overlay), but
-/// never steals focus from the frontmost app.
+/// Borderless, non-activating panel hosting the notch island. The window is
+/// sized generously and shown instantly; the SwiftUI content animates between
+/// a collapsed notch-sized state (invisible black-on-black) and the expanded
+/// island, per the Dynamic Island choreography.
 @MainActor
 final class OverflowPanel: NSPanel {
 
-    static let contentWidth: CGFloat = 380
-
     private let store: MenuBarStore
-    private var clickMonitor: Any?
+    /// Reports hover state changes so the owner can manage auto-close.
+    var onHoverChange: ((Bool) -> Void)?
+
+    private var globalClickMonitor: Any?
 
     init(store: MenuBarStore) {
         self.store = store
@@ -30,35 +32,46 @@ final class OverflowPanel: NSPanel {
         level = .popUpMenu
         collectionBehavior = [.stationary, .canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        let root = OverflowView(store: store) { [weak self] in
-            self?.hide()
-        }
-        let hosting = NSHostingView(rootView: root)
-        hosting.sizingOptions = [.preferredContentSize]
-        contentView = hosting
+        let root = OverflowView(
+            store: store,
+            onHover: { [weak self] inside in self?.onHoverChange?(inside) },
+            onClose: { [weak self] in self?.hide() }
+        )
+        contentView = NSHostingView(rootView: root)
     }
 
     override var canBecomeKey: Bool { true }
 
     var isShown: Bool { isVisible }
 
-    /// Position flush against the top of the screen, centered on the notch,
-    /// and install a click-outside monitor for dismissal.
     func show() {
+        guard !isShown else { return }
         store.refresh()
-        guard let metrics = store.metrics ?? fallbackMetrics() else { return }
+        guard let metrics = store.metrics else { return }
 
+        store.capturer.requestPermissionIfNeeded()
+
+        // Generous fixed frame; the island animates inside it.
+        let width: CGFloat = 640
+        let height: CGFloat = metrics.menuBarHeight + 160
         let screen = metrics.screen
-        let height = preferredHeight()
-        let width = Self.contentWidth
-        let x = metrics.notchCenterX - width / 2
-        let y = screen.frame.maxY - height
-        setFrame(CGRect(x: x, y: y, width: width, height: height), display: true)
+        setFrame(CGRect(
+            x: metrics.notchCenterX - width / 2,
+            y: screen.frame.maxY - height,
+            width: width,
+            height: height
+        ), display: true)
 
         orderFrontRegardless()
-        makeKey()
 
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(
+        Task { await store.captureIcons() }
+
+        // Let the window land on screen before the expand spring starts.
+        DispatchQueue.main.async { [store] in
+            store.panelExpanded = true
+        }
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
             Task { @MainActor in self?.hide() }
@@ -66,11 +79,17 @@ final class OverflowPanel: NSPanel {
     }
 
     func hide() {
-        if let clickMonitor {
-            NSEvent.removeMonitor(clickMonitor)
-            self.clickMonitor = nil
+        guard isShown else { return }
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+            self.globalClickMonitor = nil
         }
-        orderOut(nil)
+        store.panelExpanded = false
+        // Remove the window only after the collapse spring has finished.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, !self.store.panelExpanded else { return }
+            self.orderOut(nil)
+        }
     }
 
     func toggle() {
@@ -81,22 +100,8 @@ final class OverflowPanel: NSPanel {
         hide()
     }
 
-    private func preferredHeight() -> CGFloat {
-        let menuBar = store.metrics?.menuBarHeight ?? 38
-        let rows = max(1, store.axTrusted ? store.hiddenItems.count : 2)
-        let rowHeight: CGFloat = 36
-        let chrome: CGFloat = 64
-        return min(menuBar + chrome + CGFloat(rows) * rowHeight, 560)
-    }
-
-    /// Non-notch fallback (external display / older Mac): center under menu bar.
-    private func fallbackMetrics() -> NotchMetrics? {
-        guard let screen = NSScreen.main else { return nil }
-        let center = screen.frame.midX
-        return NotchMetrics(
-            screen: screen,
-            notchXRange: (center - 110)...(center + 110),
-            menuBarHeight: screen.frame.maxY - screen.visibleFrame.maxY
-        )
+    override func mouseDown(with event: NSEvent) {
+        // Clicks landing on the transparent margin around the island.
+        hide()
     }
 }

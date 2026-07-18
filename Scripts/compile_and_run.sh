@@ -44,7 +44,9 @@ if [[ -n "${RELEASE_ARCHES}" ]]; then
 fi
 
 log "==> package app"
-SIGNING_MODE=adhoc ARCHES="${ARCHES_VALUE}" "${ROOT_DIR}/Scripts/package_app.sh" release
+# Stable identity keeps TCC grants (Accessibility, Screen Recording) across rebuilds.
+APP_IDENTITY="${APP_IDENTITY:-Apple Development: Johannes Trummer (CG329JVHHB)}" \
+  ARCHES="${ARCHES_VALUE}" "${ROOT_DIR}/Scripts/package_app.sh" release
 
 log "==> launch app"
 if ! open "${APP_BUNDLE}"; then

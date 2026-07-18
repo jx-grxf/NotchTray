@@ -15,11 +15,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = MenuBarStore()
     private var statusItem: NSStatusItem?
     private var panel: OverflowPanel?
+    private var hoverZone: NotchHoverZone?
+    private var closeTask: Task<Void, Never>?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        panel = OverflowPanel(store: store)
+        let panel = OverflowPanel(store: store)
+        panel.onHoverChange = { [weak self] inside in self?.hoverChanged(inside) }
+        self.panel = panel
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
@@ -35,8 +39,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
 
         store.onRefresh = { [weak self] in self?.updateBadge() }
+        store.refresh()
         store.startPolling()
+        installHoverZone()
         registerHotKey()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
 
         if !AXIsProcessTrusted() {
             MenuBarScanner.requestAccessibility()
@@ -50,7 +63,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func togglePanel() {
+        closeTask?.cancel()
         panel?.toggle()
+    }
+
+    // MARK: - Hover choreography
+
+    private func installHoverZone() {
+        hoverZone?.orderOut(nil)
+        hoverZone = nil
+        guard let metrics = NotchMetrics.detect() else { return }
+        hoverZone = NotchHoverZone(
+            metrics: metrics,
+            onEnter: { [weak self] in self?.notchHovered() },
+            onExit: { [weak self] in self?.hoverChanged(false) }
+        )
+    }
+
+    private func notchHovered() {
+        closeTask?.cancel()
+        // Only expand when there is something to show (or to ask for).
+        guard !store.axTrusted || !store.hiddenItems.isEmpty else { return }
+        panel?.show()
+    }
+
+    private func hoverChanged(_ inside: Bool) {
+        closeTask?.cancel()
+        guard !inside else { return }
+        closeTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.panel?.hide()
+        }
+    }
+
+    @objc private func screensChanged() {
+        panel?.hide()
+        installHoverZone()
+        store.refresh()
     }
 
     // MARK: - Status item

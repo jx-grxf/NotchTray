@@ -1,87 +1,72 @@
 import SwiftUI
 
-/// Content of the drop-down: hidden status items as clickable rows on a
-/// solid black Dynamic Island-style shape that blends with the notch.
+/// The notch island. Collapsed it matches the hardware notch exactly
+/// (solid black, invisible against it); expanded it reveals the hidden
+/// status items as a horizontal strip of their real menu bar icons.
 struct OverflowView: View {
     let store: MenuBarStore
+    var onHover: (Bool) -> Void
     var onClose: () -> Void
 
+    private var notchWidth: CGFloat { store.metrics?.notchWidth ?? 200 }
+    private var menuBarHeight: CGFloat { store.metrics?.menuBarHeight ?? 38 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Dead zone behind the physical notch; content starts below it.
-            Color.clear
-                .frame(height: store.metrics?.menuBarHeight ?? 38)
+        island
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
 
-            header
+    private var island: some View {
+        VStack(spacing: 0) {
+            // Dead zone behind the physical notch.
+            Color.clear.frame(height: menuBarHeight)
 
-            Group {
-                if !store.axTrusted {
-                    accessibilityPrompt
-                } else if store.hiddenItems.isEmpty {
-                    emptyState
-                } else {
-                    itemList
-                }
-            }
-            .padding(.horizontal, 10)
-
-            footer
+            content
+                .opacity(store.panelExpanded ? 1 : 0)
         }
-        .frame(width: OverflowPanel.contentWidth)
+        .frame(width: store.panelExpanded ? nil : notchWidth)
+        .frame(height: store.panelExpanded ? nil : menuBarHeight, alignment: .top)
         .background(NotchShape(topCornerRadius: 12, bottomCornerRadius: 18).fill(.black))
         .clipShape(NotchShape(topCornerRadius: 12, bottomCornerRadius: 18))
+        .shadow(color: .black.opacity(store.panelExpanded ? 0.55 : 0), radius: 16, y: 8)
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: store.panelExpanded)
+        .onHover(perform: onHover)
     }
 
-    private var header: some View {
-        HStack {
-            Text("Hidden menu bar items")
-                .font(.system(size: 11, weight: .semibold))
+    @ViewBuilder
+    private var content: some View {
+        if !store.axTrusted {
+            accessibilityPrompt
+        } else if store.hiddenItems.isEmpty {
+            Text("All status items are visible")
+                .font(.system(size: 11))
                 .foregroundStyle(.gray)
-            Spacer()
-            if store.axTrusted {
-                Text("\(store.hiddenItems.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(.white.opacity(0.85)))
-            }
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
+        } else {
+            iconStrip
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
     }
 
-    private var itemList: some View {
-        ScrollView {
-            VStack(spacing: 2) {
-                ForEach(store.hiddenItems) { item in
-                    ItemRow(item: item) {
-                        store.activate(item)
-                        onClose()
-                    }
+    private var iconStrip: some View {
+        HStack(spacing: 4) {
+            ForEach(store.hiddenItems) { item in
+                IconCell(item: item, capture: store.captures[item.id]) {
+                    store.activate(item)
+                    onClose()
                 }
             }
         }
-        .frame(maxHeight: 420)
-    }
-
-    private var emptyState: some View {
-        HStack {
-            Image(systemName: "checkmark.circle")
-                .foregroundStyle(.green)
-            Text("All status items are visible")
-                .font(.system(size: 12))
-                .foregroundStyle(.white)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 20)
+        .padding(.top, 2)
+        .padding(.bottom, 12)
     }
 
     private var accessibilityPrompt: some View {
         VStack(spacing: 8) {
-            Text("NotchTray needs Accessibility access to read menu bar items.")
-                .font(.system(size: 12))
+            Text("NotchTray needs Accessibility access\nto read menu bar items.")
+                .font(.system(size: 11))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
             Button("Grant access…") {
@@ -91,66 +76,51 @@ struct OverflowView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-    }
-
-    private var footer: some View {
-        HStack {
-            Text("⌃⌥N to toggle")
-                .font(.system(size: 10))
-                .foregroundStyle(.gray)
-            Spacer()
-            Button("Quit") { NSApp.terminate(nil) }
-                .buttonStyle(.plain)
-                .font(.system(size: 10))
-                .foregroundStyle(.gray)
-        }
-        .padding(.horizontal, 22)
-        .padding(.top, 6)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 28)
+        .padding(.top, 4)
+        .padding(.bottom, 16)
     }
 }
 
-private struct ItemRow: View {
+/// One hidden status item, rendered with its real captured menu bar icon
+/// when available, falling back to the owning app's icon.
+private struct IconCell: View {
     let item: MenuBarItem
+    let capture: CGImage?
     var action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                if let icon = item.icon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 20, height: 20)
-                }
-                Text(item.appName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                if !item.detail.isEmpty {
-                    Text(item.detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.gray)
-                        .lineLimit(1)
-                }
-                Spacer()
-                Image(systemName: item.visibility == .behindNotch
-                      ? "eye.slash"
-                      : "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.gray)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(hovering ? Color.white.opacity(0.12) : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            iconImage
+                .frame(height: 22)
+                .frame(minWidth: 26)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(hovering ? Color.white.opacity(0.18) : .clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(item.detail.isEmpty ? item.appName : "\(item.appName) — \(item.detail)")
+    }
+
+    @ViewBuilder
+    private var iconImage: some View {
+        if let capture {
+            Image(decorative: capture, scale: 2)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else if let icon = item.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Image(systemName: "app.dashed")
+                .foregroundStyle(.white)
+        }
     }
 }
