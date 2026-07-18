@@ -103,40 +103,6 @@ final class NotchManager {
         await store.rescanNow()
     }
 
-    /// Drag our own main status icon back to the right (visible) side of the
-    /// separator. Used as self-healing when the arrangement got scrambled.
-    func restoreOwnItem(windowProvider: @escaping () -> CGRect?) async {
-        DebugLog.log("restoreOwnItem: start, collapsing")
-        collapse()
-        try? await Task.sleep(for: .milliseconds(400))
-        let frame = windowProvider()
-        DebugLog.log("restoreOwnItem: after collapse frame=\(String(describing: frame)) sep=\(String(describing: separatorFrame))")
-        guard let frame, frame.minX > 0,
-              let sep = separatorFrame,
-              let screenHeight = NSScreen.screens.first?.frame.maxY else {
-            DebugLog.log("restoreOwnItem: guard failed, re-expanding")
-            expand()
-            return
-        }
-        // Window frames are bottom-left-origin; CGEvent wants top-left.
-        let y = screenHeight - frame.midY
-        // Drop right of the separator, but never inside the notch band.
-        var targetX = sep.maxX + 25
-        if let metrics = NotchMetrics.detect(), targetX < metrics.minVisibleX + 10 {
-            targetX = metrics.minVisibleX + 10
-        }
-        DebugLog.log("restoreOwnItem: drag from (\(frame.midX), \(y)) to (\(targetX), \(y))")
-        setInteractionPassthrough?(true)
-        await ItemMover.cmdDrag(
-            from: CGPoint(x: frame.midX, y: y),
-            to: CGPoint(x: targetX, y: y)
-        )
-        setInteractionPassthrough?(false)
-        try? await Task.sleep(for: .milliseconds(250))
-        expand()
-        DebugLog.log("restoreOwnItem: done, final frame=\(String(describing: windowProvider()))")
-    }
-
     /// Open a hidden item's menu. Off-screen items would open their menus
     /// off-screen, so briefly collapse the separator to bring the item back
     /// into view, press it there, and re-expand once the menu is done.

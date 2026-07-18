@@ -47,6 +47,20 @@ Note: with ad-hoc signing the code signature changes on every rebuild, so
 macOS drops the Accessibility grant each time. For iterative development,
 create a stable self-signed identity and pass it via `APP_IDENTITY`.
 
+## Moving items into the notch
+
+The island's edit mode (pencil) can move items across an invisible separator
+status item; expanding the separator's length pushes everything left of it
+off-screen. Moves are performed with a synthetic ⌘-drag — the automated
+version of the gesture users perform by hand, since macOS has no API for
+repositioning other apps' items. Two behaviors follow from the mechanism:
+
+- Newly launched apps insert their status items at the far left, i.e. into
+  the hidden section. They show up in the island rather than the bar.
+- Restoring an item on a completely full menu bar can only bring it back as
+  far as physics allow; the leftmost item may sit behind the notch, where
+  the island still shows and activates it.
+
 ## Limitations (V1)
 
 - Built-in display only; external-display menu bars are not scanned.
