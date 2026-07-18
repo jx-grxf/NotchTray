@@ -35,13 +35,33 @@ final class ItemImageCapturer {
             $0.windowLayer == Self.statusItemWindowLayer && $0.frame.width < 400
         }
 
-        var result: [String: CGImage] = [:]
+        // One-to-one assignment with width validation. Nearest-center alone
+        // mismatches tightly packed items (and items like usage meters that
+        // resize while updating), which showed neighbors' pixels.
+        var assignments: [(item: MenuBarItem, window: SCWindow, score: CGFloat)] = []
         for item in items {
-            let itemCenterX = item.frame.midX
-            guard let window = candidates.min(by: {
-                abs($0.frame.midX - itemCenterX) < abs($1.frame.midX - itemCenterX)
-            }), abs(window.frame.midX - itemCenterX) < 8 else { continue }
+            for window in candidates {
+                let centerDiff = abs(window.frame.midX - item.frame.midX)
+                let widthDiff = abs(window.frame.width - item.frame.width)
+                guard centerDiff <= 12, widthDiff <= 10 else { continue }
+                assignments.append((item, window, centerDiff + widthDiff))
+            }
+        }
+        assignments.sort { $0.score < $1.score }
 
+        var matched: [(MenuBarItem, SCWindow)] = []
+        var usedItems = Set<String>()
+        var usedWindows = Set<CGWindowID>()
+        for entry in assignments {
+            guard !usedItems.contains(entry.item.id),
+                  !usedWindows.contains(entry.window.windowID) else { continue }
+            usedItems.insert(entry.item.id)
+            usedWindows.insert(entry.window.windowID)
+            matched.append((entry.item, entry.window))
+        }
+
+        var result: [String: CGImage] = [:]
+        for (item, window) in matched {
             let config = SCStreamConfiguration()
             config.width = Int(window.frame.width) * 2
             config.height = Int(window.frame.height) * 2

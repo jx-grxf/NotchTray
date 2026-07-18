@@ -60,7 +60,15 @@ final class MenuBarStore {
     }
 
     func captureIcons() async {
-        captures = await capturer.capture(items: editMode ? items : hiddenItems)
+        let targets = editMode ? items : hiddenItems
+        let fresh = await capturer.capture(items: targets)
+        // Merge instead of replace: a transiently failed capture (items
+        // resize/move while updating) keeps its last good icon rather than
+        // flickering back to the app-icon fallback.
+        captures.merge(fresh) { _, new in new }
+        // Drop entries for items that no longer exist at all.
+        let liveIDs = Set(items.map(\.id))
+        captures = captures.filter { liveIDs.contains($0.key) }
     }
 
     /// Awaitable scan used by move flows that need fresh positions.
