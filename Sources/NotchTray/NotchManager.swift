@@ -136,6 +136,38 @@ final class NotchManager {
 @MainActor
 enum ItemMover {
 
+    /// A synthetic `leftMouseDown` changes window-server-global button state,
+    /// not merely this app's. Between it and the matching `leftMouseUp` the
+    /// button is logically held for the whole system; if the process dies in
+    /// that window, macOS keeps it held until the user's next physical click,
+    /// which then lands as a stray drag on whatever is under the cursor.
+    ///
+    /// Every exit from `cmdDrag` therefore has to release the button —
+    /// including cancellation and termination — and a crash has to be repaired
+    /// on the next launch, which is what this flag records.
+    nonisolated private static let dragInFlightKey = "itemMoverDragInFlight"
+
+    /// Posts a bare left-mouse-up at the current cursor location. Harmless when
+    /// no button is held: the window server ignores a redundant release.
+    nonisolated static func releaseMouseButton() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let location = CGEvent(source: nil)?.location ?? .zero
+        CGEvent(
+            mouseEventSource: source,
+            mouseType: .leftMouseUp,
+            mouseCursorPosition: location,
+            mouseButton: .left
+        )?.post(tap: .cghidEventTap)
+        UserDefaults.standard.removeObject(forKey: dragInFlightKey)
+    }
+
+    /// Releases the button if a previous run died mid-drag. Call once at launch.
+    nonisolated static func recoverInterruptedDrag() {
+        guard UserDefaults.standard.bool(forKey: dragInFlightKey) else { return }
+        DebugLog.log("mover: recovering from an interrupted drag")
+        releaseMouseButton()
+    }
+
     static func cmdDrag(from: CGPoint, to: CGPoint) async {
         let restore = CGEvent(source: nil)?.location
         let source = CGEventSource(stateID: .hidSystemState)
@@ -153,19 +185,31 @@ enum ItemMover {
 
         post(.mouseMoved, from)
         try? await Task.sleep(for: .milliseconds(60))
-        post(.leftMouseDown, from)
-        try? await Task.sleep(for: .milliseconds(80))
 
-        let steps = 12
-        for step in 1...steps {
-            let t = CGFloat(step) / CGFloat(steps)
-            let point = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y)
-            post(.leftMouseDragged, point)
-            try? await Task.sleep(for: .milliseconds(18))
+        // Mark before pressing, clear after releasing, so the recovery flag can
+        // only ever err on the side of an extra harmless mouse-up.
+        UserDefaults.standard.set(true, forKey: dragInFlightKey)
+        post(.leftMouseDown, from)
+
+        await withTaskCancellationHandler {
+            try? await Task.sleep(for: .milliseconds(80))
+
+            let steps = 12
+            for step in 1...steps {
+                if Task.isCancelled { break }
+                let t = CGFloat(step) / CGFloat(steps)
+                let point = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y)
+                post(.leftMouseDragged, point)
+                try? await Task.sleep(for: .milliseconds(18))
+            }
+
+            try? await Task.sleep(for: .milliseconds(80))
+            post(.leftMouseUp, to)
+        } onCancel: {
+            releaseMouseButton()
         }
 
-        try? await Task.sleep(for: .milliseconds(80))
-        post(.leftMouseUp, to)
+        UserDefaults.standard.removeObject(forKey: dragInFlightKey)
         try? await Task.sleep(for: .milliseconds(60))
 
         if let restore {

@@ -37,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         createStatusItem()
 
+        // A previous run may have died mid-drag with the synthetic mouse
+        // button still held; clear that before doing anything else.
+        ItemMover.recoverInterruptedDrag()
+
         store.onRefresh = { [weak self] in self?.updateBadge() }
         store.refresh()
         store.startPolling()
@@ -111,6 +115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         store.stopPolling()
+        // Quitting mid-move would otherwise leave the synthetic left button
+        // held system-wide; releasing is a no-op when no drag is in flight.
+        ItemMover.releaseMouseButton()
         if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
         if let hotKeyHandler { RemoveEventHandler(hotKeyHandler) }
     }
@@ -124,6 +131,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installHoverZone() {
         hoverZone?.orderOut(nil)
         hoverZone = nil
+
+        // Tear the monitors down before the notch check, not after: on a
+        // display change that leaves no notched screen (clamshell with an
+        // external display) an early return would strand monitors whose
+        // closures still capture the metrics of a screen that is now gone.
+        if let mouseMoveMonitor {
+            NSEvent.removeMonitor(mouseMoveMonitor)
+            self.mouseMoveMonitor = nil
+        }
+        if let localMouseMoveMonitor {
+            NSEvent.removeMonitor(localMouseMoveMonitor)
+            self.localMouseMoveMonitor = nil
+        }
+
         guard let metrics = NotchMetrics.detect() else { return }
         hoverZone = NotchHoverZone(
             metrics: metrics,
@@ -134,9 +155,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Redundant trigger: tracking areas miss entries in edge cases
         // (e.g. while a mouse button is held). A global move monitor
         // catches those; the show() guard makes duplicates harmless.
-        if let mouseMoveMonitor {
-            NSEvent.removeMonitor(mouseMoveMonitor)
-        }
         let notchRange = metrics.notchXRange
         let minY = metrics.screen.frame.maxY - metrics.menuBarHeight
         let handler: () -> Void = { [weak self] in
@@ -150,9 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Moves over our own hover-zone window are delivered to this app and
         // invisible to the global monitor — mirror with a local one.
-        if let localMouseMoveMonitor {
-            NSEvent.removeMonitor(localMouseMoveMonitor)
-        }
         localMouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
             handler()
             return event

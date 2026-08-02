@@ -52,14 +52,36 @@ struct OverflowView: View {
         }
     }
 
+    /// Widest the icon run may grow before it starts scrolling. The panel is a
+    /// fixed 640pt window, and the divider plus the control buttons have to
+    /// stay inside it — without this bound a long run of hidden items pushes
+    /// Edit/Settings/Quit past the window edge, where they are both invisible
+    /// and unclickable.
+    private static let maxIconRunWidth: CGFloat = 460
+
+    /// An `IconCell` is 30pt minimum plus 4pt padding either side, and the
+    /// enclosing `HStack` adds 4pt of spacing per item.
+    private static let iconCellWidth: CGFloat = 42
+
+    private var iconRunWidth: CGFloat {
+        min(CGFloat(store.hiddenItems.count) * Self.iconCellWidth, Self.maxIconRunWidth)
+    }
+
     private var iconStrip: some View {
         HStack(spacing: 4) {
-            ForEach(store.hiddenItems) { item in
-                IconCell(item: item, capture: store.captures[item.id]) {
-                    store.activate(item)
-                    onClose()
+            // Scrolls only once the run actually outgrows the bound; below it
+            // the explicit width keeps the island hugging its content.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(store.hiddenItems) { item in
+                        IconCell(item: item, capture: store.captures[item.id]) {
+                            store.activate(item)
+                            onClose()
+                        }
+                    }
                 }
             }
+            .frame(width: iconRunWidth)
             divider
             controlButtons
         }

@@ -47,14 +47,26 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.contentViewController = NSHostingController(rootView: SettingsView())
     }
 
+    /// Whether this controller currently holds an activation-policy claim.
+    /// `showWindow` is reachable twice without an intervening close — the
+    /// right-click menu and the island's gear button both call `show()` — and
+    /// an unbalanced `enter()` would pin `count` above zero forever, leaving
+    /// the Dock icon visible for the rest of the session.
+    private var holdsActivationPolicy = false
+
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         window?.makeKeyAndOrderFront(nil)
+        guard !holdsActivationPolicy else { return }
+        holdsActivationPolicy = true
         AppActivationPolicy.enter()
     }
 
     func windowWillClose(_ notification: Notification) {
-        AppActivationPolicy.leave()
+        if holdsActivationPolicy {
+            holdsActivationPolicy = false
+            AppActivationPolicy.leave()
+        }
         Self.shared = nil
     }
 }
