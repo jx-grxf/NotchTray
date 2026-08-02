@@ -15,6 +15,15 @@
 
 ---
 
+## Install
+
+Download the latest `NotchTray-<version>.dmg` from
+[Releases](https://github.com/jx-grxf/NotchTray/releases), open it and drag
+NotchTray into Applications. The app is signed with a Developer ID and
+notarized by Apple, so it opens without a Gatekeeper warning.
+
+Requires macOS 14 or later on a MacBook with a notch (Apple Silicon).
+
 ## How it works
 
 - **Notch geometry** comes from `NSScreen.auxiliaryTopLeftArea` / `auxiliaryTopRightArea` — the exact pixel band covered by the hardware notch.
@@ -55,3 +64,21 @@ The island's edit mode (pencil) can move items across an invisible separator sta
 - Built-in display only; external-display menu bars are not scanned.
 - Items are listed, not visually reordered — macOS offers no public API to move other apps' status items (managers like Ice simulate ⌘-drags).
 - Menu bar managers that park items off-screen (Ice, Bartender) make those items appear in NotchTray's "hidden" list as well; that is by design.
+
+## Release
+
+```bash
+NOTCHTRAY_SIGN_IDENTITY="Developer ID Application: … (TEAMID)" \
+  ./Scripts/package_dmg.sh          # build, sign, styled DMG -> dist/
+
+NOTCHTRAY_NOTARY_ENABLED=true \
+NOTCHTRAY_NOTARY_KEYCHAIN_PROFILE=notchtray-notary \
+  ./Scripts/notarize_release.sh     # notarize + staple
+```
+
+Pushing a `v*` tag runs the same pipeline on CI and publishes the release.
+See `.github/workflows/release.yml` for the required repository secrets.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

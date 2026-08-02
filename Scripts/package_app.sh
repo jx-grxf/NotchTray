@@ -8,9 +8,14 @@ cd "$ROOT"
 APP_NAME=${APP_NAME:-NotchTray}
 BUNDLE_ID=${BUNDLE_ID:-com.johannesgrof.notchtray}
 MACOS_MIN_VERSION=${MACOS_MIN_VERSION:-14.0}
-MENU_BAR_APP=${MENU_BAR_APP:-0}
+# NotchTray is a menu bar utility: LSUIElement keeps the Dock icon away at
+# launch. AppActivationPolicy still switches to .regular on demand (settings
+# window, "Show in Dock" preference), but without this the Dock icon flashes
+# up on every launch before the runtime policy is applied.
+MENU_BAR_APP=${MENU_BAR_APP:-1}
 SIGNING_MODE=${SIGNING_MODE:-}
 APP_IDENTITY=${APP_IDENTITY:-}
+COPYRIGHT=${COPYRIGHT:-"Copyright © $(date +%Y) Johannes Grof. MIT licensed."}
 
 if [[ -f "$ROOT/version.env" ]]; then
   source "$ROOT/version.env"
@@ -33,11 +38,12 @@ APP="$ROOT/${APP_NAME}.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
-# Convert Icon.icon to Icon.icns if present (requires iconutil).
-ICON_SOURCE="$ROOT/Icon.icon"
+# Rebuild Icon.icns from the artwork so the bundle can never ship a stale icon.
 ICON_TARGET="$ROOT/Icon.icns"
-if [[ -f "$ICON_SOURCE" ]]; then
-  iconutil --convert icns --output "$ICON_TARGET" "$ICON_SOURCE"
+if [[ -f "$ROOT/Assets/AppIcon.png" ]]; then
+  "$ROOT/Scripts/make_icon.sh" >/dev/null
+elif [[ -f "$ROOT/Icon.icon" ]]; then
+  iconutil --convert icns --output "$ICON_TARGET" "$ROOT/Icon.icon"
 fi
 
 LSUI_VALUE="false"
@@ -58,10 +64,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleExecutable</key><string>${APP_NAME}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
     <key>LSMinimumSystemVersion</key><string>${MACOS_MIN_VERSION}</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>LSUIElement</key><${LSUI_VALUE}/>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSHumanReadableCopyright</key><string>${COPYRIGHT}</string>
+    <key>NSSupportsAutomaticTermination</key><false/>
+    <key>NSSupportsSuddenTermination</key><false/>
     <key>CFBundleIconFile</key><string>Icon</string>
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>GitCommit</key><string>${GIT_COMMIT}</string>

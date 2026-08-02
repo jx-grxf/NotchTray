@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Package app (ad-hoc signed)
+        run: SIGNING_MODE=adhoc ARCHES=arm64 ./Scripts/package_app.sh release
+
+      - name: Verify bundle
+        run: |
+          set -euo pipefail
+          plist="NotchTray.app/Contents/Info.plist"
+          test -x NotchTray.app/Contents/MacOS/NotchTray
+          test -f NotchTray.app/Contents/Resources/Icon.icns
+          # A menu bar utility that ships with LSUIElement off would bounce a
+          # Dock icon on every launch; guard the packaging default.
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$plist")" = "true"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist"
+          codesign --verify --deep --strict NotchTray.app
