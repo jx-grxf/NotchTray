@@ -34,6 +34,7 @@ final class MenuBarStore {
     var onRefresh: (() -> Void)?
 
     let capturer = ItemImageCapturer()
+    private let iconCache = IconCache()
 
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
@@ -91,15 +92,25 @@ final class MenuBarStore {
     }
 
     func captureIcons() async {
-        let targets = editMode ? items : hiddenItems
-        let fresh = await capturer.capture(items: targets)
-        // Merge instead of replace: a transiently failed capture (items
-        // resize/move while updating) keeps its last good icon rather than
-        // flickering back to the app-icon fallback.
-        captures.merge(fresh) { _, new in new }
-        // Drop entries for items that no longer exist at all.
-        let liveIDs = Set(items.map(\.id))
-        captures = captures.filter { liveIDs.contains($0.key) }
+        // Photograph everything, not just what is hidden. A hidden item sits
+        // far off-screen where ScreenCaptureKit will not follow, so its only
+        // chance at a real icon is a capture taken while it was still visible.
+        let fresh = await capturer.capture(items: items)
+
+        for (id, image) in fresh {
+            guard let item = items.first(where: { $0.id == id }) else { continue }
+            iconCache.store(image, for: item.cacheKey)
+        }
+
+        // Rebuild the lookup the views read, falling back to whatever the
+        // cache still holds for items that could not be captured this round.
+        var resolved: [String: CGImage] = [:]
+        for item in items {
+            if let image = iconCache[item.cacheKey] {
+                resolved[item.id] = image
+            }
+        }
+        captures = resolved
     }
 
     /// Awaitable scan used by move flows that need fresh positions.
@@ -120,13 +131,23 @@ final class MenuBarStore {
     func startPolling() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
+            var cyclesSinceCapture = 0
             while !Task.isCancelled {
                 let expanded = self?.panelExpanded == true
+
+                // An item can only be photographed while it is on screen, so
+                // the cache has to be topped up in the background too — by the
+                // time the user opens the island, the interesting items are
+                // already parked off-screen where no capture is possible.
+                cyclesSinceCapture += 1
+                let capture = expanded || cyclesSinceCapture >= 10
+                if capture { cyclesSinceCapture = 0 }
+
                 // Skip the cycle mid-move: the menu bar is being reshuffled by
                 // our own separator, so a scan now captures a transient layout
                 // that the move flow would then read back as the real one.
                 if self?.isMoving != true {
-                    self?.refresh(thenCapture: expanded)
+                    self?.refresh(thenCapture: capture)
                 }
                 // Fast cycle while the island is open so live tiles
                 // (CPU %, clocks, ...) stay current; relaxed otherwise.
@@ -140,37 +161,64 @@ final class MenuBarStore {
         pollTask = nil
     }
 
+    /// Runs a move flow with a hard ceiling on how long it may hold `isMoving`.
+    ///
+    /// Every flow drives the separator: it collapses, the items spill into the
+    /// visible menu bar, and only the tail of the flow puts them back. A flow
+    /// that never returns therefore does not just block the next click — it
+    /// leaves the menu bar permanently unpacked with no way out but a relaunch.
+    /// The watchdog exists so that state is always recoverable.
+    private func runMove(_ body: @escaping () async -> Void) {
+        guard let notchManager, !isMoving else { return }
+        isMoving = true
+
+        Task {
+            let work = Task { await body() }
+            let watchdog = Task {
+                try? await Task.sleep(for: .seconds(20))
+                guard !Task.isCancelled else { return }
+                DebugLog.log("move: watchdog fired, forcing recovery")
+                work.cancel()
+            }
+
+            await work.value
+            watchdog.cancel()
+
+            // Whatever happened, put the menu bar back the way it was.
+            notchManager.expand()
+            activatingItemID = nil
+            isMoving = false
+            await rescanNow()
+        }
+    }
+
     func activate(_ item: MenuBarItem) {
         guard let notchManager, !isMoving else {
             MenuBarScanner.activate(item)
             return
         }
-        isMoving = true
         activatingItemID = item.id
-        Task {
+        runMove { [weak self] in
+            guard let self else { return }
             await notchManager.activate(item, store: self)
-            activatingItemID = nil
-            isMoving = false
         }
     }
 
     func hideIntoNotch(_ item: MenuBarItem) {
-        guard let notchManager, !isMoving else { return }
-        isMoving = true
-        Task {
+        guard let notchManager else { return }
+        runMove { [weak self] in
+            guard let self else { return }
             await notchManager.hide(item, store: self)
-            await captureIcons()
-            isMoving = false
+            await self.captureIcons()
         }
     }
 
     func restoreFromNotch(_ item: MenuBarItem) {
-        guard let notchManager, !isMoving else { return }
-        isMoving = true
-        Task {
+        guard let notchManager else { return }
+        runMove { [weak self] in
+            guard let self else { return }
             await notchManager.restore(item, store: self)
-            await captureIcons()
-            isMoving = false
+            await self.captureIcons()
         }
     }
 

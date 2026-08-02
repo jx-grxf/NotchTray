@@ -11,6 +11,8 @@ import AppKit
 struct RunningAppSnapshot: Sendable {
     let pid: pid_t
     let name: String
+    /// Stable across launches, unlike the pid — used to key the icon cache.
+    let bundleID: String
     /// Materialised on the main actor and never mutated afterwards.
     let icon: NSImage?
 
@@ -23,6 +25,7 @@ struct RunningAppSnapshot: Sendable {
             return RunningAppSnapshot(
                 pid: pid,
                 name: app.localizedName ?? "PID \(pid)",
+                bundleID: app.bundleIdentifier ?? "pid.\(pid)",
                 icon: app.icon
             )
         }

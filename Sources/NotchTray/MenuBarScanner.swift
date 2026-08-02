@@ -65,10 +65,12 @@ enum MenuBarScanner {
                     id: Self.identity(of: child, pid: pid, index: index),
                     pid: pid,
                     appName: appName,
+                    bundleID: app.bundleID,
                     icon: app.icon,
                     detail: detail == appName ? "" : detail,
                     frame: frame,
                     visibility: classify(frame: frame, bounds: bounds),
+                    slot: index,
                     element: child
                 ))
             }

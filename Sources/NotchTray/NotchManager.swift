@@ -54,6 +54,11 @@ final class NotchManager {
         collapse()
         try? await Task.sleep(for: .milliseconds(350))
         await store.rescanNow()
+        // Everything is on screen for exactly this long. ScreenCaptureKit
+        // cannot photograph a window parked far off-screen, so this window is
+        // the only chance to refresh the real icon of an item that is
+        // otherwise permanently hidden.
+        await store.captureIcons()
 
         guard let fresh = store.items.first(where: { $0.id == item.id }),
               let sep = separatorFrame else {
@@ -78,10 +83,24 @@ final class NotchManager {
         collapse()
         try? await Task.sleep(for: .milliseconds(350))
         await store.rescanNow()
+        // Everything is on screen for exactly this long. ScreenCaptureKit
+        // cannot photograph a window parked far off-screen, so this window is
+        // the only chance to refresh the real icon of an item that is
+        // otherwise permanently hidden.
+        await store.captureIcons()
 
         guard let fresh = store.items.first(where: { $0.id == item.id }),
               fresh.frame.minX > 0,
               let sep = separatorFrame else {
+            // Silent failure here reads as "restore is broken", so record why:
+            // either the item vanished between scans, or collapsing did not
+            // bring it back on screen because the menu bar has no room left.
+            let found = store.items.first(where: { $0.id == item.id })
+            DebugLog.log(
+                "restore aborted: \(item.appName) "
+                + "found=\(found != nil) minX=\(found.map { "\($0.frame.minX)" } ?? "-") "
+                + "separator=\(separatorFrame != nil)"
+            )
             expand()
             return
         }
@@ -130,7 +149,7 @@ final class NotchManager {
                 // timeout is the ceiling, not the plan: menus that never
                 // report closing — Electron apps tend to draw their own
                 // window rather than an AXMenu — fall back to it.
-                await MenuMonitor.waitForMenuToClose(pid: item.pid, timeout: .seconds(12))
+                await MenuMonitor.waitForMenuToClose(pid: item.pid, timeout: .seconds(6))
             } else {
                 // The press did nothing, so there is no menu to wait for and
                 // no reason to keep every hidden item dumped in the menu bar.
