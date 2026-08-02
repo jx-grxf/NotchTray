@@ -6,6 +6,7 @@ import SwiftUI
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case permissions
+    case updates
     case about
 
     var id: Self { self }
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .permissions: "Permissions"
+        case .updates: "Updates"
         case .about: "About"
         }
     }
@@ -22,6 +24,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .permissions: "lock.shield"
+        case .updates: "arrow.down.circle"
         case .about: "info.circle"
         }
     }
@@ -43,7 +46,7 @@ enum AppVersion {
     static let displayString: String = {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-        return "Version \(version) (\(build))"
+        return "\(version) (\(build))"
     }()
 }
 
@@ -113,6 +116,7 @@ private struct SettingsDetailView: View {
             switch tab {
             case .general: GeneralSettingsPane()
             case .permissions: PermissionsSettingsPane()
+            case .updates: UpdatesSettingsPane()
             case .about: AboutSettingsPane()
             }
         }

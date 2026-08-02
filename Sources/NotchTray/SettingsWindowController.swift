@@ -37,7 +37,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         guard let window else { return }
         window.title = "Settings"
         window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
+        // .fullSizeContentView only does anything with a transparent titlebar;
+        // together they let the sidebar run under the title bar the way System
+        // Settings does.
+        window.titlebarAppearsTransparent = true
         window.toolbarStyle = .automatic
         window.isMovableByWindowBackground = true
         window.setFrameAutosaveName("SettingsWindow")

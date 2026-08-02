@@ -115,17 +115,32 @@ final class NotchManager {
             try? await Task.sleep(for: .milliseconds(350))
             await store.rescanNow()
 
+            let pressed: Bool
             if let fresh = store.items.first(where: { $0.id == item.id }),
                fresh.frame.minX > 0 {
-                MenuBarScanner.activate(fresh)
+                pressed = MenuBarScanner.activate(fresh)
             } else {
                 // Not ours (e.g. parked by another manager): best effort.
-                MenuBarScanner.activate(item)
+                pressed = MenuBarScanner.activate(item)
                 NSRunningApplication(processIdentifier: item.pid)?.activate()
             }
-            // Give the opened menu time before its anchor slides away again.
-            try? await Task.sleep(for: .seconds(2.5))
+
+            if pressed {
+                // Hold the reveal only while the menu is actually open. The
+                // timeout is the ceiling, not the plan: menus that never
+                // report closing — Electron apps tend to draw their own
+                // window rather than an AXMenu — fall back to it.
+                await MenuMonitor.waitForMenuToClose(pid: item.pid, timeout: .seconds(12))
+            } else {
+                // The press did nothing, so there is no menu to wait for and
+                // no reason to keep every hidden item dumped in the menu bar.
+                DebugLog.log("activate: press failed, collapsing immediately")
+            }
+
             expand()
+            // Let the window server settle the new layout before asking AX
+            // where anything is, as hide()/restore() do.
+            try? await Task.sleep(for: .milliseconds(250))
             await store.rescanNow()
         }
     }

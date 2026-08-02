@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>NotchTray</title>
+    <link>https://github.com/jx-grxf/NotchTray</link>
+    <description><![CDATA[NotchTray update feed]]></description>
+    <language>en</language>
+    <item>
+      <title>NotchTray 1.0.0</title>
+      <description><![CDATA[<p>The first release of NotchTray.</p><p>When status items overflow into the notch — or get parked off-screen by a menu bar manager — macOS simply stops drawing them, with no indication they exist. NotchTray finds them and puts them back within reach.</p><h3>What it does</h3><ul><li><strong>Finds hidden items.</strong> Discovery runs through the Accessibility API's <code>AXExtrasMenuBar</code> attribute, so per-app attribution survives macOS 26, where every status item is drawn by the Control Center process.</li><li><strong>Shows them under the notch.</strong> Hover the notch and a Dynamic Island-style panel drops down with the hidden items as their real menu bar icons. Click one to activate the actual status item.</li><li><strong>Keeps count.</strong> The status icon carries a badge whenever items are hidden.</li><li><strong>Moves items in and out.</strong> Edit mode drags items across an invisible separator item, the automated version of the ⌘-drag you would otherwise perform by hand.</li><li><strong>Stays out of the way.</strong> Menu-bar-only by default, with an optional Dock icon, launch at login, a hover toggle and an adjustable auto-close delay.</li></ul><h3>Requirements</h3><p>macOS 14 or later, on a MacBook with a notch. Accessibility access is required and requested on first launch; Screen Recording is optional and only used to render the real icons rather than generic placeholders.</p><h3>Notes</h3><ul><li>Built-in display only — external menu bars are not scanned yet.</li><li>Newly launched apps insert their status items at the far left, which is inside the hidden section, so they appear in the island rather than the bar.</li></ul>]]></description>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 02 Aug 2026 19:19:18 +0000</pubDate>
+      <enclosure url="https://github.com/jx-grxf/NotchTray/releases/download/v1.0.0/NotchTray-1.0.0.zip" length="2319711" type="application/octet-stream" sparkle:edSignature="UF6AQe+liC/4yg61MMVM/1qHBdHErbwKEjjuEWsRNTSwB1yoCKeN+eEsyf4/AmwilET2JPIpwOh5Y9HzfugkCg==" />
+    </item>
+  </channel>
+</rss>

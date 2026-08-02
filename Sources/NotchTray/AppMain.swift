@@ -41,6 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // button still held; clear that before doing anything else.
         ItemMover.recoverInterruptedDrag()
 
+        // Touch the updater so Sparkle's scheduled check starts with the
+        // user's channel already applied.
+        _ = UpdaterManager.shared
+
         store.onRefresh = { [weak self] in self?.updateBadge() }
         store.refresh()
         store.startPolling()

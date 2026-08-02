@@ -74,9 +74,17 @@ struct OverflowView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(store.hiddenItems) { item in
-                        IconCell(item: item, capture: store.captures[item.id]) {
+                        IconCell(
+                            item: item,
+                            capture: store.captures[item.id],
+                            busy: store.activatingItemID == item.id
+                        ) {
+                            // Deliberately no onClose(): revealing the item
+                            // takes a couple of seconds, and tearing the island
+                            // down first is what made the icon look like it was
+                            // in two places at once. The island stays anchored
+                            // and marks the item busy until the flow finishes.
                             store.activate(item)
-                            onClose()
                         }
                     }
                 }
@@ -219,25 +227,48 @@ private struct MiniControl: View {
 private struct IconCell: View {
     let item: MenuBarItem
     let capture: CGImage?
+    /// The item is being revealed and pressed right now.
+    var busy = false
     var action: () -> Void
     @State private var hovering = false
+
+    private var label: String {
+        item.detail.isEmpty ? item.appName : "\(item.appName) — \(item.detail)"
+    }
 
     var body: some View {
         Button(action: action) {
             iconImage
                 .frame(height: 24)
-                .frame(minWidth: 30)
+                // Captured items carry their rendered width — a "Now Playing"
+                // or battery-percentage tile is far wider than a glyph, and
+                // without a ceiling one of them would push the controls out of
+                // the panel.
+                .frame(minWidth: 30, maxWidth: 80)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 6)
+                .opacity(busy ? 0.35 : 1)
+                .overlay {
+                    if busy {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    }
+                }
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(hovering ? Color.white.opacity(0.18) : .clear)
+                        .fill(hovering && !busy ? Color.white.opacity(0.18) : .clear)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+        .disabled(busy)
         .onHover { hovering = $0 }
-        .help(item.detail.isEmpty ? item.appName : "\(item.appName) — \(item.detail)")
+        .help(label)
+        // The icons are decorative images, so the button would otherwise be
+        // announced as unlabelled.
+        .accessibilityLabel(label)
+        .accessibilityHint(busy ? "Opening" : "Opens this status item")
     }
 
     @ViewBuilder

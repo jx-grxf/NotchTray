@@ -28,16 +28,13 @@ struct ScanBounds: Sendable {
 /// the main thread.
 enum MenuBarScanner {
 
-    static func scan(bounds: ScanBounds?) -> [MenuBarItem] {
+    static func scan(bounds: ScanBounds?, apps: [RunningAppSnapshot]) -> [MenuBarItem] {
         guard AXIsProcessTrusted() else { return [] }
 
-        let ownPID = ProcessInfo.processInfo.processIdentifier
         var items: [MenuBarItem] = []
 
-        for app in NSWorkspace.shared.runningApplications {
-            let pid = app.processIdentifier
-            guard pid != ownPID, pid > 0 else { continue }
-
+        for app in apps {
+            let pid = app.pid
             let appElement = AXUIElementCreateApplication(pid)
             // Don't stall the scan on unresponsive processes.
             AXUIElementSetMessagingTimeout(appElement, 0.25)
@@ -49,7 +46,7 @@ enum MenuBarScanner {
             guard let children = copyAttribute(extrasBar, kAXChildrenAttribute) as? [AXUIElement],
                   !children.isEmpty else { continue }
 
-            let appName = app.localizedName ?? "PID \(pid)"
+            let appName = app.name
 
             for (index, child) in children.enumerated() {
                 guard let position = pointValue(copyAttribute(child, kAXPositionAttribute)),
@@ -65,7 +62,7 @@ enum MenuBarScanner {
                     ?? ""
 
                 items.append(MenuBarItem(
-                    id: "\(pid)-\(index)",
+                    id: Self.identity(of: child, pid: pid, index: index),
                     pid: pid,
                     appName: appName,
                     icon: app.icon,
@@ -80,11 +77,38 @@ enum MenuBarScanner {
         return items.sorted { $0.frame.minX < $1.frame.minX }
     }
 
+    /// A key that survives rescans.
+    ///
+    /// The position within `AXExtrasMenuBar` is not usable as identity: moving
+    /// one item renumbers its neighbours, so an index-derived key reassigns
+    /// itself mid-flight. SwiftUI then recycles the wrong rows and the icon
+    /// cache — which is keyed by the same id — orphans its entries, which is
+    /// what made an item appear twice during a move.
+    ///
+    /// `AXUIElement` compares by the element it refers to rather than by
+    /// pointer, so its hash is stable for as long as the item exists. Index is
+    /// only a last resort for the rare element that refuses to hash.
+    private static func identity(of element: AXUIElement, pid: pid_t, index: Int) -> String {
+        let hash = CFHash(element)
+        return hash == 0 ? "\(pid)-idx\(index)" : "\(pid)-\(hash)"
+    }
+
     /// Opens the item's menu/action as if it had been clicked.
-    /// Works even when the item is occluded by the notch or parked off-screen.
+    /// Works even when the item is occluded by the notch, but the menu appears
+    /// wherever the item currently sits — an item parked off-screen opens its
+    /// menu off-screen too, which is why the move flows reveal it first.
+    ///
+    /// The result is meaningful: a stale element (owning app quit and
+    /// relaunched between scans) or an unresponsive process fails here, and
+    /// callers should skip the rest of a reveal sequence rather than run its
+    /// full visual disruption for a click that did nothing.
     @discardableResult
     static func activate(_ item: MenuBarItem) -> Bool {
-        AXUIElementPerformAction(item.element, kAXPressAction as CFString) == .success
+        let result = AXUIElementPerformAction(item.element, kAXPressAction as CFString)
+        if result != .success {
+            DebugLog.log("activate failed: \(item.appName) pid=\(item.pid) code=\(result.rawValue)")
+        }
+        return result == .success
     }
 
     static func requestAccessibility() {

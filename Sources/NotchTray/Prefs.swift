@@ -6,6 +6,7 @@ enum Prefs {
     static let openOnHoverKey = "openOnHover"
     static let autoCloseDelayKey = "autoCloseDelay"
     static let showInDockKey = "showInDock"
+    static let updateChannelKey = "updateChannel"
 
     /// Expand the island when the cursor touches the notch (default on).
     static var openOnHover: Bool {

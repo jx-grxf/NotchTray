@@ -17,6 +17,13 @@ SIGNING_MODE=${SIGNING_MODE:-}
 APP_IDENTITY=${APP_IDENTITY:-}
 COPYRIGHT=${COPYRIGHT:-"Copyright © $(date +%Y) Johannes Grof. MIT licensed."}
 
+# Sparkle. One feed carries both tracks; prerelease items are tagged with
+# <sparkle:channel>beta</sparkle:channel> and are invisible to stable users.
+SPARKLE_FEED_URL=${SPARKLE_FEED_URL:-"https://raw.githubusercontent.com/jx-grxf/NotchTray/main/appcast.xml"}
+# Public half of the EdDSA pair. The private half lives in the login keychain
+# (account NotchTraySparkle), in 1Password, and as a CI secret.
+SPARKLE_PUBLIC_KEY=${SPARKLE_PUBLIC_KEY:-"GO/9WlTHdRIo9D26CcHum+cx7ZkeJo9irfhf3jJcqBA="}
+
 if [[ -f "$ROOT/version.env" ]]; then
   source "$ROOT/version.env"
 else
@@ -76,6 +83,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSSupportsAutomaticTermination</key><false/>
     <key>NSSupportsSuddenTermination</key><false/>
     <key>CFBundleIconFile</key><string>Icon</string>
+    <key>SUFeedURL</key><string>${SPARKLE_FEED_URL}</string>
+    <key>SUPublicEDKey</key><string>${SPARKLE_PUBLIC_KEY}</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>86400</integer>
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>GitCommit</key><string>${GIT_COMMIT}</string>
 </dict>
@@ -197,16 +208,27 @@ else
   CODESIGN_ARGS=(--force --timestamp --options runtime --sign "$APP_IDENTITY")
 fi
 
-# Sign embedded frameworks and their nested binaries before the app bundle.
+# Sign embedded frameworks inside-out. Sparkle nests an updater app and two
+# XPC services that arrive with upstream's signature; notarization rejects
+# those, so each is re-signed before the framework is re-sealed.
+#
+# --preserve-metadata=entitlements matters on the nested bundles: Sparkle's
+# installer helpers ship their own entitlements, and replacing them with our
+# empty file breaks the updater at runtime.
 sign_frameworks() {
-  local fw
+  local fw nested
   for fw in "$APP/Contents/Frameworks/"*.framework; do
     if [[ ! -d "$fw" ]]; then
       continue
     fi
-    while IFS= read -r -d '' bin; do
-      codesign "${CODESIGN_ARGS[@]}" "$bin"
-    done < <(find "$fw" -type f -perm -111 -print0)
+    for nested in \
+      "$fw/Versions/B/XPCServices/Downloader.xpc" \
+      "$fw/Versions/B/XPCServices/Installer.xpc" \
+      "$fw/Versions/B/Autoupdate" \
+      "$fw/Versions/B/Updater.app"; do
+      [[ -e "$nested" ]] || continue
+      codesign "${CODESIGN_ARGS[@]}" --preserve-metadata=entitlements "$nested"
+    done
     codesign "${CODESIGN_ARGS[@]}" "$fw"
   done
 }

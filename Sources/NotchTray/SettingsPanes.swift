@@ -94,8 +94,6 @@ struct PermissionsSettingsPane: View {
     @State private var axTrusted = AXIsProcessTrusted()
     @State private var screenRecording = CGPreflightScreenCaptureAccess()
 
-    private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-
     var body: some View {
         Form {
             Section("Required") {
@@ -118,9 +116,15 @@ struct PermissionsSettingsPane: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .contentMargins(.top, 8, for: .scrollContent)
-        .onReceive(refreshTimer) { _ in
-            axTrusted = AXIsProcessTrusted()
-            screenRecording = CGPreflightScreenCaptureAccess()
+        // Bound to the view's lifetime. A `Timer.publish` stored in a plain
+        // `let` would be rebuilt every time SwiftUI re-initialises this struct,
+        // spinning up a fresh timer on each unrelated parent re-render.
+        .task {
+            while !Task.isCancelled {
+                axTrusted = AXIsProcessTrusted()
+                screenRecording = CGPreflightScreenCaptureAccess()
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
     }
 
@@ -150,16 +154,109 @@ struct PermissionsSettingsPane: View {
     }
 }
 
-// MARK: - About
+// MARK: - Updates
 
-struct AboutSettingsPane: View {
+struct UpdatesSettingsPane: View {
+    @Bindable private var updater = UpdaterManager.shared
+
     var body: some View {
         Form {
             Section {
-                LabeledContent("NotchTray", value: AppVersion.displayString)
+                Picker("Channel", selection: $updater.channel) {
+                    ForEach(UpdateChannel.allCases) { channel in
+                        Text(channel.title).tag(channel)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(updater.channel.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Release channel")
+            }
+
+            Section("Automatic updates") {
+                Toggle(isOn: $updater.automaticallyChecksForUpdates) {
+                    Text("Check for updates automatically")
+                    Text("Once a day, in the background.")
+                }
+                .toggleStyle(.switch)
+
+                Toggle(isOn: $updater.automaticallyDownloadsUpdates) {
+                    Text("Download updates automatically")
+                    Text("Installs on the next launch instead of asking first.")
+                }
+                .toggleStyle(.switch)
+                .disabled(!updater.automaticallyChecksForUpdates)
+            }
+
+            Section {
+                LabeledContent("Installed version", value: updater.currentVersion)
+                LabeledContent("Last checked") {
+                    if let date = updater.lastUpdateCheckDate {
+                        Text(date, format: .relative(presentation: .named))
+                    } else {
+                        Text("Never").foregroundStyle(.secondary)
+                    }
+                }
+                Button("Check for Updates…") {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.top, 8, for: .scrollContent)
+    }
+}
+
+// MARK: - About
+
+struct AboutSettingsPane: View {
+    private static let repository = URL(string: "https://github.com/jx-grxf/NotchTray")!
+    private static let issues = URL(string: "https://github.com/jx-grxf/NotchTray/issues/new")!
+    private static let license = URL(string: "https://github.com/jx-grxf/NotchTray/blob/main/LICENSE")!
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 16) {
+                    if let icon = NSApp.applicationIconImage {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 72, height: 72)
+                            .accessibilityHidden(true)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NotchTray")
+                            .font(.title2.weight(.semibold))
+                        Text("Version \(AppVersion.displayString)")
+                            .foregroundStyle(.secondary)
+                        Text("by Johannes Grof")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+
                 Text("Shows menu bar items hidden behind the notch in a Dynamic Island-style panel. Hover the notch to open it.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Link(destination: Self.repository) {
+                    Label("Source code on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                Link(destination: Self.issues) {
+                    Label("Report a bug", systemImage: "ladybug")
+                }
+                Link(destination: Self.license) {
+                    Label("MIT License", systemImage: "doc.text")
+                }
             }
         }
         .formStyle(.grouped)
