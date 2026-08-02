@@ -1,15 +1,24 @@
 <div align="center">
 
-# 📲 NotchTray
+<img src="Docs/icon.png" width="140" alt="NotchTray">
+
+# NotchTray
 
 **Recover the menu bar items your MacBook notch swallowed.**
 
 *When status items overflow into the notch — or get parked off-screen by a menu bar manager — macOS just stops showing them, with no hint they exist. NotchTray finds those hidden items and presents them in a Dynamic Island-style panel that drops down from under the notch. Click an entry to activate the real status item.*
 
-![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue?logo=apple&logoColor=white)
+[![Latest release](https://img.shields.io/github/v/release/jx-grxf/NotchTray?label=release&color=2563EB)](https://github.com/jx-grxf/NotchTray/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jx-grxf/NotchTray/total?color=2563EB&label=downloads)](https://github.com/jx-grxf/NotchTray/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/jx-grxf/NotchTray/ci.yml?branch=main&label=build)](https://github.com/jx-grxf/NotchTray/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/jx-grxf/NotchTray?color=2563EB)](LICENSE)
+
+![Platform](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)
 ![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
-![SwiftPM](https://img.shields.io/badge/SwiftPM-compatible-brightgreen?logo=swift&logoColor=white)
-![Menu Bar](https://img.shields.io/badge/menu%20bar-utility-000000?logo=apple&logoColor=white)
+![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-000000?logo=apple&logoColor=white)
+![Notarized](https://img.shields.io/badge/notarized-Developer%20ID-34C759?logo=apple&logoColor=white)
+
+### [⬇︎ Download the latest release](https://github.com/jx-grxf/NotchTray/releases/latest)
 
 </div>
 
@@ -18,11 +27,28 @@
 ## Install
 
 Download the latest `NotchTray-<version>.dmg` from
-[Releases](https://github.com/jx-grxf/NotchTray/releases), open it and drag
-NotchTray into Applications. The app is signed with a Developer ID and
+[Releases](https://github.com/jx-grxf/NotchTray/releases/latest), open it and
+drag NotchTray into Applications. The app is signed with a Developer ID and
 notarized by Apple, so it opens without a Gatekeeper warning.
 
+On first launch it asks for **Accessibility** access, which it needs to read
+and activate menu bar items. **Screen Recording** is optional and only used to
+draw each item's real icon instead of its app icon.
+
 Requires macOS 14 or later on a MacBook with a notch (Apple Silicon).
+
+## Updates
+
+NotchTray updates itself through [Sparkle](https://sparkle-project.org). Two
+tracks are available in **Settings → Updates**:
+
+| Channel | What you get |
+| --- | --- |
+| **Stable** | Released versions only. |
+| **Beta** | Prereleases as well — earlier features, rougher edges. |
+
+Both tracks share one feed; beta subscribers also receive stable releases, so
+switching back never strands you on a prerelease.
 
 ## How it works
 

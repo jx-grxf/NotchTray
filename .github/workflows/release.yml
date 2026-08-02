@@ -24,6 +24,7 @@ jobs:
       NOTCHTRAY_NOTARY_KEY_ID: ${{ secrets.NOTCHTRAY_NOTARY_KEY_ID }}
       NOTCHTRAY_NOTARY_ISSUER_ID: ${{ secrets.NOTCHTRAY_NOTARY_ISSUER_ID }}
       NOTCHTRAY_NOTARY_KEY_P8_BASE64: ${{ secrets.NOTCHTRAY_NOTARY_KEY_P8_BASE64 }}
+      SPARKLE_PRIVATE_KEY: ${{ secrets.NOTCHTRAY_SPARKLE_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,6 +84,15 @@ jobs:
           NOTCHTRAY_NOTARY_ENABLED: ${{ env.NOTCHTRAY_NOTARY_KEY_ID != '' }}
         run: ./Scripts/notarize_release.sh
 
+      - name: Build signed Sparkle feed
+        if: env.SPARKLE_PRIVATE_KEY != ''
+        env:
+          NOTCHTRAY_SPARKLE_PRIVATE_KEY: ${{ secrets.NOTCHTRAY_SPARKLE_PRIVATE_KEY }}
+          # A tag like v1.2.0-beta.1 publishes on the beta channel; anything
+          # else is a stable release.
+          NOTCHTRAY_UPDATE_CHANNEL: ${{ contains(steps.version.outputs.tag, '-') && 'beta' || 'stable' }}
+        run: ./Scripts/create_sparkle_assets.sh
+
       - name: Verify artifact
         run: |
           set -euo pipefail
@@ -118,9 +128,33 @@ jobs:
             ARGS+=(--generate-notes)
           fi
 
+          ASSETS=("$DMG")
+          # Sparkle downloads the zip, not the DMG, so it has to be published
+          # under the URL baked into the appcast entry.
+          ZIP="dist/sparkle/NotchTray-${VERSION}.zip"
+          [[ -f "$ZIP" ]] && ASSETS+=("$ZIP")
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" "${ARGS[@]}"
-            gh release upload "$TAG" "$DMG" --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG" "${ARGS[@]}" "$DMG"
+            gh release create "$TAG" "${ARGS[@]}" "${ASSETS[@]}"
           fi
+
+      - name: Commit the updated appcast
+        if: env.SPARKLE_PRIVATE_KEY != ''
+        run: |
+          set -euo pipefail
+          # The feed is served from main, so the release is only reachable by
+          # existing installs once this lands.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git pull --ff-only
+          git add appcast.xml
+          if git diff --cached --quiet; then
+            echo "appcast unchanged"
+            exit 0
+          fi
+          git commit -m "Publish ${{ steps.version.outputs.tag }} to the update feed"
+          git push origin main
