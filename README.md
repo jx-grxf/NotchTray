@@ -4,6 +4,13 @@
 
 # NotchTray
 
+## ❗❗❗ Seems like apple finally fixed this with MacOS 27 Golden Gate ❗❗❗ Update and you wont need any additional tools! 
+
+# Thanks for using my app!
+
+---
+
+
 **Recover the menu bar items your MacBook notch swallowed.**
 
 *When status items overflow into the notch — or get parked off-screen by a menu bar manager — macOS just stops showing them, with no hint they exist. NotchTray finds those hidden items and presents them in a Dynamic Island-style panel that drops down from under the notch. Click an entry to activate the real status item.*
